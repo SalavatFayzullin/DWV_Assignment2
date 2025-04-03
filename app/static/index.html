@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Earth Map with Points</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        canvas { display: block; }
+        #ipTable, #filterPanel {
+            position: fixed;
+            top: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 1000;
+            font-family: Arial, sans-serif;
+        }
+        #ipTable { right: 20px; }
+        #filterPanel { left: 20px; }
+        #ipTable th {
+            text-align: left;
+            padding: 5px;
+            border-bottom: 1px solid white;
+        }
+        #ipTable td {
+            padding: 5px;
+        }
+        #filterPanel label {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div id="filterPanel">
+        <h3>Filter</h3>
+        <label>
+            <input type="checkbox" id="suspiciousFilter">
+            Show only suspicious
+        </label>
+    </div>
+    <div id="ipTable">
+        <h3>Top 5 IPs</h3>
+        <table>
+            <thead>
+                <tr><th>IP</th><th>Count</th></tr>
+            </thead>
+            <tbody id="ipList"></tbody>
+        </table>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Reusable resources
+        const pointGeometry = new THREE.CircleGeometry(5, 32);
+        const materials = {
+            green: new THREE.MeshBasicMaterial({ color: 0x00ff00 }),
+            red: new THREE.MeshBasicMaterial({ color: 0xff0000 })
+        };
+
+        // Filter state
+        let showSuspiciousOnly = false;
+        let latestData = [];
+
+        // Scene setup
+        const scene = new THREE.Scene();
+        const camera = new THREE.OrthographicCamera(
+            window.innerWidth / -2,
+            window.innerWidth / 2,
+            window.innerHeight / 2,
+            window.innerHeight / -2,
+            1,
+            1000
+        );
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setClearColor(0x000000);
+        document.body.appendChild(renderer.domElement);
+
+        // Earth mesh initialization
+        new THREE.TextureLoader().load(
+            'https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg',
+            texture => {
+                const earthMesh = new THREE.Mesh(
+                    new THREE.PlaneGeometry(window.innerWidth, window.innerHeight),
+                    new THREE.MeshBasicMaterial({ map: texture, transparent: true })
+                );
+                scene.add(earthMesh);
+                camera.position.z = 5;
+                startPolling();
+                animate();
+            },
+            undefined,
+            err => console.error('Error loading texture:', err)
+        );
+
+        // Coordinate conversion
+        const convertCoords = (lat, lon) => ({
+            x: (lon / 180) * (window.innerWidth/2) + window.innerWidth/2 - 10,
+            y: -(lat / -90) * (window.innerHeight/2) + window.innerHeight/2 - 10
+        });
+
+        // Points management
+        const points = new Set();
+        const drawPoints = data => {
+            // Store latest data
+            latestData = data;
+
+            // Clear previous points
+            points.forEach(point => scene.remove(point));
+            points.clear();
+
+            // Create filtered points
+            data.filter(point => showSuspiciousOnly ? point.suspicious : true)
+                .forEach(point => {
+                    const pos = convertCoords(point.latitude, point.longitude);
+                    const dot = new THREE.Mesh(
+                        pointGeometry,
+                        point.suspicious ? materials.red : materials.green
+                    );
+                    dot.position.set(pos.x - window.innerWidth/2, pos.y - window.innerHeight/2, 1);
+                    scene.add(dot);
+                    points.add(dot);
+                });
+        };
+
+        // IP frequency tracking
+        const updateTopIPsTable = data => {
+            const ipCount = data.reduce((acc, { ip }) => {
+                if (ip) acc[ip] = (acc[ip] || 0) + 1;
+                return acc;
+            }, {});
+
+            const topIPs = Object.entries(ipCount)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 5);
+
+            document.getElementById('ipList').innerHTML = topIPs
+                .map(([ip, count]) => `<tr><td>${ip}</td><td>${count}</td></tr>`)
+                .join('') || '<tr><td colspan="2">No data</td></tr>';
+        };
+
+        // Data fetching
+        let isFetching = false;
+        const fetchData = async () => {
+            if (isFetching) return;
+            isFetching = true;
+
+            try {
+                const response = await fetch('/get_data');
+                const data = await response.json();
+                drawPoints(data);
+                updateTopIPsTable(data);
+            } catch (error) {
+                console.error('Error fetching data:', error);
+            } finally {
+                isFetching = false;
+            }
+        };
+
+        // Filter control handler
+        document.getElementById('suspiciousFilter').addEventListener('change', function() {
+            showSuspiciousOnly = this.checked;
+            drawPoints(latestData);
+        });
+
+        // System initialization
+        const startPolling = () => {
+            fetchData();
+            setInterval(fetchData, 2000);
+        };
+
+        const animate = () => {
+            requestAnimationFrame(animate);
+            renderer.render(scene, camera);
+        };
+
+        // Window resize handler
+        window.addEventListener('resize', () => {
+            camera.left = window.innerWidth / -2;
+            camera.right = window.innerWidth / 2;
+            camera.top = window.innerHeight / 2;
+            camera.bottom = window.innerHeight / -2;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+
+            scene.traverse(obj => {
+                if (obj instanceof THREE.Mesh && obj.geometry instanceof THREE.PlaneGeometry) {
+                    obj.scale.set(1, window.innerHeight/window.innerWidth, 1);
+                }
+            });
+        });
+    </script>
+</body>
+</html>

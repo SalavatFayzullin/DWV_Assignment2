@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_ENV=development
+    volumes:
+      - ./app:/app
+
+  client:
+    build: .
+    command: sh -c "sleep 3 && python ./app/client.py"
+    depends_on:
+      - web
