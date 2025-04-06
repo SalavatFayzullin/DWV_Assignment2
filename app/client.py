@@ -4,15 +4,11 @@ import time
 import random
 from datetime import datetime
 
-
+# Sends packets to the server
 def send_data(csv_path, server_url, min_delay, max_delay):
-    """
-    Отправляет данные из CSV с случайными интервалами
-    :param csv_path: путь к CSV-файлу
-    :param server_url: URL сервера
-    :param min_delay: минимальная задержка (секунды)
-    :param max_delay: максимальная задержка (секунды)
-    """
+    # csv_path - path to csv file
+    # server_url - url of the server to which the packets will be sent
+    # min_delay and max_delay - in seconds
     try:
         df = pd.read_csv(csv_path)
         print(f"Loaded {len(df)} records from {csv_path}")
@@ -21,11 +17,11 @@ def send_data(csv_path, server_url, min_delay, max_delay):
         return
 
     for index, row in df.iterrows():
-        # Генерация случайной задержки
+        # Random delay generation
         delay = random.uniform(min_delay, max_delay)
         time.sleep(delay)
 
-        # Подготовка данных
+        # Data preparation
         payload = {
             'ip': row['ip address'],
             'latitude': row['Latitude'],
@@ -34,7 +30,7 @@ def send_data(csv_path, server_url, min_delay, max_delay):
             'suspicious': bool(row['suspicious'])
         }
 
-        # Отправка данных
+        # Data sending
         try:
             response = requests.post(
                 server_url,
